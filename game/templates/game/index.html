@@ -6,40 +6,88 @@
     <title>AI Othello</title>
     <style>
         body { font-family: 'Arial', sans-serif; background-color: #f0f2f5; text-align: center; margin: 0; padding: 20px; }
-        h1 { color: #333; }
-        #status { font-size: 1.2rem; margin-bottom: 20px; font-weight: bold; }
+        h1 { color: #333; margin-bottom: 5px; }
+        
+        /* ステータス周り */
+        .score-board { display: flex; justify-content: center; gap: 30px; margin-bottom: 15px; font-size: 1.2rem; font-weight: bold; }
+        .score { display: flex; align-items: center; gap: 8px; }
+        .score-stone { width: 20px; height: 20px; border-radius: 50%; box-shadow: 1px 1px 3px rgba(0,0,0,0.3); }
+        #status { font-size: 1.2rem; margin-bottom: 20px; font-weight: bold; height: 24px;}
+        
+        /* 盤面 */
         #board { 
-            display: grid; 
-            grid-template-columns: repeat(8, 60px); 
-            grid-template-rows: repeat(8, 60px); 
-            gap: 2px; 
-            background-color: #333; 
-            width: max-content; 
-            margin: 0 auto; 
-            border: 4px solid #333; 
-            border-radius: 4px;
+            display: grid; grid-template-columns: repeat(8, 60px); grid-template-rows: repeat(8, 60px); 
+            gap: 2px; background-color: #333; width: max-content; margin: 0 auto; 
+            border: 4px solid #333; border-radius: 4px; box-shadow: 0 4px 10px rgba(0,0,0,0.2);
         }
-        .cell { background-color: #2e8b57; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        .cell { background-color: #2e8b57; display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; }
         .cell:hover { background-color: #3cb371; }
-        .stone { width: 50px; height: 50px; border-radius: 50%; box-shadow: 2px 2px 5px rgba(0,0,0,0.3); }
+        
+        /* 石とハイライト */
+        .stone { width: 50px; height: 50px; border-radius: 50%; box-shadow: 2px 2px 5px rgba(0,0,0,0.3); transition: transform 0.2s; }
         .black { background-color: #111; }
         .white { background-color: #eee; }
+        .legal-hint { width: 14px; height: 14px; background-color: rgba(0,0,0,0.2); border-radius: 50%; }
+        
+        /* アニメーション関連 */
         .loading { color: #e74c3c; animation: blink 1s infinite; }
         @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        
+        /* パス通知（トースト） */
+        #toast { 
+            visibility: hidden; min-width: 250px; background-color: #333; color: #fff; 
+            text-align: center; border-radius: 8px; padding: 16px; position: fixed; 
+            z-index: 10; left: 50%; bottom: 30px; transform: translateX(-50%); font-weight: bold;
+        }
+        #toast.show { visibility: visible; animation: fadein 0.5s, fadeout 0.5s 2.5s; }
+        @keyframes fadein { from { bottom: 0; opacity: 0; } to { bottom: 30px; opacity: 1; } }
+        @keyframes fadeout { from { bottom: 30px; opacity: 1; } to { bottom: 0; opacity: 0; } }
+
+        /* リザルト画面（モーダル） */
+        #modal { 
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0,0,0,0.6); justify-content: center; align-items: center; z-index: 20; 
+        }
+        .modal-content { background: white; padding: 40px; border-radius: 12px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .modal-content h2 { margin-top: 0; font-size: 2rem; color: #333; }
+        .btn-restart { 
+            padding: 12px 24px; background: #2e8b57; color: white; border: none; 
+            border-radius: 6px; cursor: pointer; font-size: 1.1rem; font-weight: bold; margin-top: 20px; transition: 0.2s;
+        }
+        .btn-restart:hover { background: #246b43; }
     </style>
 </head>
 <body>
 
     <h1>AI Othello</h1>
+    
+    <div class="score-board">
+        <div class="score"><div class="score-stone black"></div>あなた: <span id="black-score">2</span></div>
+        <div class="score"><div class="score-stone white"></div>AI: <span id="white-score">2</span></div>
+    </div>
+    
     <div id="status">手番: あなた (黒)</div>
     <div id="board"></div>
+
+    <div id="toast"></div>
+
+    <div id="modal">
+        <div class="modal-content">
+            <h2 id="result-title">ゲーム終了</h2>
+            <p id="result-text" style="font-size: 1.2rem;"></p>
+            <button class="btn-restart" onclick="initGame()">もう一度遊ぶ</button>
+        </div>
+    </div>
 
     <script>
         const boardElement = document.getElementById('board');
         const statusElement = document.getElementById('status');
+        const blackScoreEl = document.getElementById('black-score');
+        const whiteScoreEl = document.getElementById('white-score');
+        const toastEl = document.getElementById('toast');
+        const modalEl = document.getElementById('modal');
         
-        // 盤面データ (0:空, 1:黒(あなた), -1:白(AI))
-        let board = Array.from({length: 8}, () => Array(8).fill(0));
+        let board = [];
         let currentPlayer = 1; 
         let isAITurn = false;
 
@@ -47,12 +95,41 @@
             [-1,-1], [-1,0], [-1,1], [0,-1], [0,1], [1,-1], [1,0], [1,1]
         ];
 
-        // 初期配置
-        board[3][3] = -1; board[4][4] = -1;
-        board[3][4] = 1; board[4][3] = 1;
+        // ゲームの初期化
+        function initGame() {
+            board = Array.from({length: 8}, () => Array(8).fill(0));
+            board[3][3] = -1; board[4][4] = -1;
+            board[3][4] = 1; board[4][3] = 1;
+            currentPlayer = 1;
+            isAITurn = false;
+            statusElement.innerText = '手番: あなた (黒)';
+            modalEl.style.display = 'none';
+            drawBoard();
+        }
+
+        function updateScore() {
+            let black = 0, white = 0;
+            for(let r=0; r<8; r++){
+                for(let c=0; c<8; c++){
+                    if(board[r][c] === 1) black++;
+                    if(board[r][c] === -1) white++;
+                }
+            }
+            blackScoreEl.innerText = black;
+            whiteScoreEl.innerText = white;
+            return { black, white };
+        }
+
+        function showToast(message) {
+            toastEl.innerText = message;
+            toastEl.className = "show";
+            setTimeout(() => { toastEl.className = toastEl.className.replace("show", ""); }, 3000);
+        }
 
         function drawBoard() {
             boardElement.innerHTML = '';
+            let playerLegalMoves = 0;
+
             for (let r = 0; r < 8; r++) {
                 for (let c = 0; c < 8; c++) {
                     const cell = document.createElement('div');
@@ -63,16 +140,24 @@
                         cell.innerHTML = '<div class="stone black"></div>';
                     } else if (board[r][c] === -1) {
                         cell.innerHTML = '<div class="stone white"></div>';
+                    } else if (!isAITurn && currentPlayer === 1) {
+                        // あなたのターン時、合法手ならハイライトを表示
+                        if (getFlippedStones(r, c, 1).length > 0) {
+                            cell.innerHTML = '<div class="legal-hint"></div>';
+                            playerLegalMoves++;
+                        }
                     }
                     boardElement.appendChild(cell);
                 }
             }
+            
+            const scores = updateScore();
+            checkGameOver(scores.black, scores.white, playerLegalMoves);
         }
 
         function getFlippedStones(r, c, player) {
             if (board[r][c] !== 0) return [];
             let flipped = [];
-            
             for (let [dr, dc] of DIRECTIONS) {
                 let nr = r + dr, nc = c + dc;
                 let temp = [];
@@ -87,22 +172,35 @@
             return flipped;
         }
 
+        // 盤面が埋まったか、両者パスかを判定して結果表示
+        function checkGameOver(black, white, playerLegalMoves) {
+            let aiHasMove = false;
+            for(let r=0; r<8; r++){
+                for(let c=0; c<8; c++){
+                    if(getFlippedStones(r, c, -1).length > 0) aiHasMove = true;
+                }
+            }
+
+            if (playerLegalMoves === 0 && !aiHasMove) {
+                // 両者打てない = ゲーム終了
+                let title = black > white ? "🎉 あなたの勝ち！" : (white > black ? "😭 AIの勝ち..." : "引き分け");
+                document.getElementById('result-title').innerText = title;
+                document.getElementById('result-text').innerText = `黒: ${black} 石 / 白: ${white} 石`;
+                setTimeout(() => { modalEl.style.display = 'flex'; }, 500);
+            } else if (playerLegalMoves === 0 && currentPlayer === 1 && !isAITurn) {
+                // あなたがパスの場合
+                showToast("あなたは打てる場所がないためパスです！");
+                startAITurn();
+            }
+        }
+
         async function onCellClick(r, c) {
-            if (isAITurn) return; // AIの思考中はクリック無効
-
+            if (isAITurn) return;
             const flipped = getFlippedStones(r, c, currentPlayer);
-            if (flipped.length === 0) return; // 合法手でなければ無視
+            if (flipped.length === 0) return;
 
-            // あなた(黒)が石を置く
             applyMove(r, c, flipped, currentPlayer);
-            
-            // AIのターンへ
-            isAITurn = true;
-            currentPlayer = -1;
-            statusElement.innerHTML = '<span class="loading">AIが思考中...</span>';
-            
-            // 少し遅延を入れてAIのAPIを叩く（UX向上のため）
-            setTimeout(fetchAIMove, 500);
+            startAITurn();
         }
 
         function applyMove(r, c, flipped, player) {
@@ -111,6 +209,13 @@
                 board[fr][fc] = player;
             }
             drawBoard();
+        }
+
+        function startAITurn() {
+            isAITurn = true;
+            currentPlayer = -1;
+            statusElement.innerHTML = '<span class="loading">AIが思考中...</span>';
+            setTimeout(fetchAIMove, 600); // すぐ打つと不自然なので少し待機
         }
 
         async function fetchAIMove() {
@@ -125,21 +230,24 @@
                 if (data.status === 'success') {
                     const flipped = getFlippedStones(data.row, data.col, currentPlayer);
                     applyMove(data.row, data.col, flipped, currentPlayer);
+                } else if (data.status === 'pass') {
+                    showToast("AIは打てる場所がないためパスしました！");
                 } else {
                     alert("AIエラー: " + data.message);
                 }
             } catch (error) {
-                alert("通信エラーが発生しました。");
+                showToast("通信エラーが発生しました。");
             } finally {
-                // あなた(黒)のターンに戻す
+                // AIのターン終了、あなたのターンへ
                 currentPlayer = 1;
                 isAITurn = false;
                 statusElement.innerText = '手番: あなた (黒)';
+                drawBoard(); // ターン切り替え後に合法手を再計算
             }
         }
 
-        // 初回描画
-        drawBoard();
+        // ゲーム開始
+        initGame();
     </script>
 </body>
 </html>

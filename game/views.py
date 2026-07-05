@@ -17,6 +17,7 @@ if BASE_DIR not in sys.path:
 
 from core.board import OthelloBoard
 from ml.model import OthelloNet
+from ml.mcts import MCTS
 
 # ==========================================
 # 2. AIモデルのロード（サーバー起動時に1回だけ実行）
@@ -37,39 +38,26 @@ else:
 # ==========================================
 def predict_best_move(board_array, current_player):
     """
-    盤面の2次元配列を受け取り、合法手の中からAIが最も良いと判断した手を返す
+    MCTS（モンテカルロ木探索）を用いて、数手先を読んだ最善手を返す
     """
-    # フェーズ1で作ったルールエンジンに現在の状態をセット
     game = OthelloBoard()
     game.board = np.array(board_array)
     game.current_player = current_player
-    
-    # 合法手（打てる場所）のリストを取得
     legal_moves = game.get_legal_moves(current_player)
 
-    # 万が一打てる場所がない場合（パス）
+    # 合法手がない場合はパス
     if not legal_moves:
         return None, None
+        
+    # 合法手が1つしかない場合は、思考せずに即座に返す（時短）
+    if len(legal_moves) == 1:
+        return legal_moves[0][0], legal_moves[0][1]
 
-    # 盤面を正規化してAIに入力 (自分:1, 相手:-1)
-    state = np.array(board_array) * current_player
-    state_tensor = torch.tensor(state, dtype=torch.float32).reshape(1, 1, 8, 8)
+    # MCTSによるシミュレーションの実行（50回）
+    # ※強くしたい場合は num_simulations を 100 や 200 に増やします（思考時間は延びます）
+    mcts = MCTS(ai_model, num_simulations=50)
+    best_move = mcts.search(board_array, current_player)
     
-    with torch.no_grad(): # 推論時はメモリ節約のため勾配計算をオフ
-        output = ai_model(state_tensor).squeeze() # 64マスのスコア（1次元配列）
-        
-    # 合法手の中から、AIのスコアが最も高いマスを選ぶ
-    best_move = None
-    best_score = -float('inf')
-    
-    for r, c in legal_moves:
-        action_index = r * 8 + c
-        score = output[action_index].item()
-        
-        if score > best_score:
-            best_score = score
-            best_move = (r, c)
-            
     return best_move[0], best_move[1]
 
 # ==========================================

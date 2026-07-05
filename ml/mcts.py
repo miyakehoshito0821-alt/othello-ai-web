@@ -1,7 +1,6 @@
 import os
 import sys
 import math
-import torch
 import numpy as np
 
 # プロジェクトのルートをパスに追加して core.board を読み込めるようにする
@@ -99,20 +98,20 @@ class MCTS:
         return best_action, best_child
 
     def get_policy(self, board, player, legal_moves):
-        """CNNモデルから各手の確率（Softmax）を取得"""
+        """NumPyモデルから各手の確率を取得"""
         state = np.array(board) * player
-        state_tensor = torch.tensor(state, dtype=torch.float32).reshape(1, 1, 8, 8)
+        # PyTorchの形状 (1, 1, 8, 8) に合わせる
+        state_input = state.reshape(1, 1, 8, 8)
         
-        with torch.no_grad():
-            output = self.model(state_tensor).squeeze()
+        # 【修正】torchではなくnumpyモデルのforwardを呼び出す
+        output = self.model.forward(state_input)
         
         policy = {}
         scores = []
         for r, c in legal_moves:
             idx = r * 8 + c
-            scores.append(output[idx].item())
+            scores.append(output[idx])
         
-        # Softmax関数で確率に変換
         scores = np.array(scores)
         scores = np.exp(scores - np.max(scores))
         probs = scores / np.sum(scores)

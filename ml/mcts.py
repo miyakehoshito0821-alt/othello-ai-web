@@ -123,11 +123,38 @@ class MCTS:
         return policy
 
     def evaluate_board(self, game):
-        """盤面の有利不利を評価（-1.0 〜 1.0）"""
-        p1_stones = np.sum(game.board == game.current_player)
-        p2_stones = np.sum(game.board == -game.current_player)
-        if p1_stones + p2_stones == 0: return 0
-        return (p1_stones - p2_stones) / (p1_stones + p2_stones)
+        """
+        オセロ特有の盤面評価（角の価値を高く、角の隣を低くする）
+        """
+        # 盤面の各マスの価値（重み付け）
+        weight_matrix = np.array([
+            [ 120, -20,  20,   5,   5,  20, -20, 120],
+            [ -20, -40,  -5,  -5,  -5,  -5, -40, -20],
+            [  20,  -5,  15,   3,   3,  15,  -5,  20],
+            [   5,  -5,   3,   3,   3,   3,  -5,   5],
+            [   5,  -5,   3,   3,   3,   3,  -5,   5],
+            [  20,  -5,  15,   3,   3,  15,  -5,  20],
+            [ -20, -40,  -5,  -5,  -5,  -5, -40, -20],
+            [ 120, -20,  20,   5,   5,  20, -20, 120]
+        ])
+
+        # 現在のプレイヤーから見たスコアを計算
+        player_board = (game.board == game.current_player).astype(int)
+        opponent_board = (game.board == -game.current_player).astype(int)
+        
+        player_score = np.sum(player_board * weight_matrix)
+        opponent_score = np.sum(opponent_board * weight_matrix)
+        
+        # 終局時（石の数で勝敗が決まっている場合）は石の数を最優先
+        if game.is_game_over():
+            p_stones = np.sum(player_board)
+            o_stones = np.sum(opponent_board)
+            if p_stones > o_stones: return 1.0
+            if p_stones < o_stones: return -1.0
+            return 0.0
+
+        # スコアの差を -1.0 〜 1.0 に正規化（tanh関数を使用）
+        return math.tanh((player_score - opponent_score) / 100.0)
 
     def backpropagate(self, node, value, leaf_player):
         """シミュレーション結果の反映"""

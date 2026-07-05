@@ -152,7 +152,7 @@
             }
             
             const scores = updateScore();
-            checkGameOver(scores.black, scores.white, playerLegalMoves);
+            //checkGameOver(scores.black, scores.white, playerLegalMoves);
         }
 
         function getFlippedStones(r, c, player) {
@@ -172,27 +172,6 @@
             return flipped;
         }
 
-        // 盤面が埋まったか、両者パスかを判定して結果表示
-        function checkGameOver(black, white, playerLegalMoves) {
-            let aiHasMove = false;
-            for(let r=0; r<8; r++){
-                for(let c=0; c<8; c++){
-                    if(getFlippedStones(r, c, -1).length > 0) aiHasMove = true;
-                }
-            }
-
-            if (playerLegalMoves === 0 && !aiHasMove) {
-                // 両者打てない = ゲーム終了
-                let title = black > white ? "🎉 あなたの勝ち！" : (white > black ? "😭 AIの勝ち..." : "引き分け");
-                document.getElementById('result-title').innerText = title;
-                document.getElementById('result-text').innerText = `黒: ${black} 石 / 白: ${white} 石`;
-                setTimeout(() => { modalEl.style.display = 'flex'; }, 500);
-            } else if (playerLegalMoves === 0 && currentPlayer === 1 && !isAITurn) {
-                // あなたがパスの場合
-                showToast("あなたは打てる場所がないためパスです！");
-                startAITurn();
-            }
-        }
 
         async function onCellClick(r, c) {
             if (isAITurn) return;
@@ -200,7 +179,7 @@
             if (flipped.length === 0) return;
 
             applyMove(r, c, flipped, currentPlayer);
-            startAITurn();
+            checkGameState();
         }
 
         function applyMove(r, c, flipped, player) {
@@ -211,12 +190,54 @@
             drawBoard();
         }
 
-        function startAITurn() {
-            isAITurn = true;
-            currentPlayer = -1;
-            statusElement.innerHTML = '<span class="loading">AIが思考中...</span>';
-            setTimeout(fetchAIMove, 600); // すぐ打つと不自然なので少し待機
+        // 新しいターン管理 兼 ゲーム終了判定関数
+function checkGameState() {
+    // 両者の打てる手を確認する
+    let humanHasMove = false;
+    let aiHasMove = false;
+    for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+            if (getFlippedStones(r, c, 1).length > 0) humanHasMove = true;
+            if (getFlippedStones(r, c, -1).length > 0) aiHasMove = true;
         }
+    }
+
+    // 1. どちらも打てない場合（ゲーム終了）
+    if (!humanHasMove && !aiHasMove) {
+        const scores = updateScore();
+        let title = scores.black > scores.white ? "🎉 あなたの勝ち！" : (scores.white > scores.black ? "😭 AIの勝ち..." : "引き分け");
+        document.getElementById('result-title').innerText = title;
+        document.getElementById('result-text').innerText = `黒: ${scores.black} 石 / 白: ${scores.white} 石`;
+        setTimeout(() => { modalEl.style.display = 'flex'; }, 500);
+        return;
+    }
+
+    // 2. ターンを交代する（黒なら白へ、白なら黒へ）
+    currentPlayer *= -1;
+
+    // 3. 次のプレイヤーがパスかどうか判定
+    if (currentPlayer === 1 && !humanHasMove) {
+        showToast("あなたは打てる場所がないためパスです！");
+        currentPlayer = -1; // 強制的にAIのターンに戻す
+    } else if (currentPlayer === -1 && !aiHasMove) {
+        showToast("AIは打てる場所がないためパスしました！");
+        currentPlayer = 1;  // 強制的にあなたのターンに戻す
+    }
+
+    // 4. 次のターンを開始する
+    if (currentPlayer === -1) {
+        // AIのターン
+        isAITurn = true;
+        statusElement.innerHTML = '<span class="loading">AIが思考中...</span>';
+        drawBoard(); // UIを更新
+        setTimeout(fetchAIMove, 600); // AIを1回だけ正しく呼ぶ
+    } else {
+        // あなたのターン
+        isAITurn = false;
+        statusElement.innerText = '手番: あなた (黒)';
+        drawBoard(); // UIを更新（ここで合法手のハイライトが表示される）
+    }
+}
 
         async function fetchAIMove() {
             try {
@@ -238,11 +259,8 @@
             } catch (error) {
                 showToast("通信エラーが発生しました。");
             } finally {
-                // AIのターン終了、あなたのターンへ
-                currentPlayer = 1;
-                isAITurn = false;
-                statusElement.innerText = '手番: あなた (黒)';
-                drawBoard(); // ターン切り替え後に合法手を再計算
+                // AIの処理が終わったら、ターンの切り替え処理を呼ぶ
+                checkGameState();
             }
         }
 

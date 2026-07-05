@@ -81,6 +81,11 @@ class OthelloBoard:
         # 手番を交代する
         self.current_player = -self.current_player
 
+    def pass_turn(self):
+        """パス（スキップ）処理：強制的に手番を交代する"""
+        self.current_player = -self.current_player
+
+        
     def is_game_over(self):
         """ゲーム終了判定（両者ともに打つ手がない場合）"""
         return len(self.get_legal_moves(1)) == 0 and len(self.get_legal_moves(-1)) == 0

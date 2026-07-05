@@ -24,38 +24,41 @@ from ml.mcts import MCTS
 # ==========================================
 MODEL_PATH = os.path.join(BASE_DIR, 'ml', 'othello_model.pth')
 device = torch.device("cpu")
-ai_model = OthelloNet()
+ai_model = None  # 最初は空にしておく
 
-if os.path.exists(MODEL_PATH):
-    ai_model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
-    ai_model.eval()  # 推論モード（学習ストップ）に切り替え
-    print("✅ 学習済みAIモデルのロードに成功しました！")
-else:
-    print("⚠️ AIモデルが見つかりません。")
+def get_ai_model():
+    """
+    AIが必要になった瞬間に初めてロードする（すでにロード済みならそのまま返す）
+    """
+    global ai_model
+    if ai_model is None:
+        print("⏳ AIモデルを初めてメモリに読み込んでいます...")
+        ai_model = OthelloNet()
+        if os.path.exists(MODEL_PATH):
+            ai_model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+            ai_model.eval()
+            print("✅ AIモデルのロード完了！")
+        else:
+            print("⚠️ AIモデルが見つかりません。")
+    return ai_model
 
 # ==========================================
 # 3. AI推論ロジック（ルールエンジン連携）
 # ==========================================
 def predict_best_move(board_array, current_player):
-    """
-    MCTS（モンテカルロ木探索）を用いて、数手先を読んだ最善手を返す
-    """
+    # ここで初めてAIを呼び出す
+    model = get_ai_model()
+    
     game = OthelloBoard()
     game.board = np.array(board_array)
     game.current_player = current_player
     legal_moves = game.get_legal_moves(current_player)
 
-    # 合法手がない場合はパス
-    if not legal_moves:
-        return None, None
-        
-    # 合法手が1つしかない場合は、思考せずに即座に返す（時短）
-    if len(legal_moves) == 1:
-        return legal_moves[0][0], legal_moves[0][1]
+    if not legal_moves: return None, None
+    if len(legal_moves) == 1: return legal_moves[0][0], legal_moves[0][1]
 
-    # MCTSによるシミュレーションの実行（50回）
-    # ※強くしたい場合は num_simulations を 100 や 200 に増やします（思考時間は延びます）
-    mcts = MCTS(ai_model, num_simulations=10)
+    # MCTSによるシミュレーション
+    mcts = MCTS(model, num_simulations=10) # Render無料枠に合わせて回数を調整
     best_move = mcts.search(board_array, current_player)
     
     return best_move[0], best_move[1]

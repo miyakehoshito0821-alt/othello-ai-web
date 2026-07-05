@@ -55,7 +55,7 @@ def predict_best_move(board_array, current_player):
 
     # MCTSによるシミュレーションの実行（50回）
     # ※強くしたい場合は num_simulations を 100 や 200 に増やします（思考時間は延びます）
-    mcts = MCTS(ai_model, num_simulations=50)
+    mcts = MCTS(ai_model, num_simulations=10)
     best_move = mcts.search(board_array, current_player)
     
     return best_move[0], best_move[1]

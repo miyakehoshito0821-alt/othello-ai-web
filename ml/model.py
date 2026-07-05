@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.lib.stride_tricks import sliding_window_view
 
 class NumpyOthelloNet:
     """
@@ -26,17 +27,14 @@ class NumpyOthelloNet:
         """簡易版2D畳み込み（パディング=1、ストライド=1専用）"""
         out_channels, in_channels, kh, kw = w.shape
         _, _, h, w_in = x.shape
-        
-        # パディング処理（上下左右に0を1マス足す）
-        padded = np.pad(x, ((0,0), (0,0), (1,1), (1,1)), mode='constant')
-        out = np.zeros((1, out_channels, h, w_in))
-        
-        for oc in range(out_channels):
-            for r in range(h):
-                for c in range(w_in):
-                    # 3x3の領域を切り取って掛け算の総和を計算
-                    patch = padded[0, :, r:r+3, c:c+3]
-                    out[0, oc, r, c] = np.sum(patch * w[oc]) + b[oc]
+
+        padded = np.pad(x, ((0, 0), (0, 0), (1, 1), (1, 1)), mode='constant')
+        patches = sliding_window_view(padded, (kh, kw), axis=(2, 3))
+        # patches.shape == (1, in_channels, h, w_in, kh, kw)
+        patches = patches.transpose(0, 2, 3, 1, 4, 5)
+        out = np.tensordot(patches, w, axes=([3, 4, 5], [1, 2, 3]))
+        out = out.transpose(0, 3, 1, 2)
+        out += b.reshape(1, out_channels, 1, 1)
         return out
 
     def forward(self, x):

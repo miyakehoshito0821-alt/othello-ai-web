@@ -30,10 +30,22 @@ class Node:
         return self.value_sum / self.visit_count
 
 class MCTS:
+    WEIGHT_MATRIX = np.array([
+            [ 120, -20,  20,   5,   5,  20, -20, 120],
+            [ -20, -40,  -5,  -5,  -5,  -5, -40, -20],
+            [  20,  -5,  15,   3,   3,  15,  -5,  20],
+            [   5,  -5,   3,   3,   3,   3,  -5,   5],
+            [   5,  -5,   3,   3,   3,   3,  -5,   5],
+            [  20,  -5,  15,   3,   3,  15,  -5,  20],
+            [ -20, -40,  -5,  -5,  -5,  -5, -40, -20],
+            [ 120, -20,  20,   5,   5,  20, -20, 120]
+        ])
+
     def __init__(self, model, num_simulations=50):
         self.model = model
         self.num_simulations = num_simulations # 脳内で何回シミュレーションするか（多いほど強く、遅くなる）
         self.c_puct = 1.0 # 探索(未知の手)と知識(直感)のバランス
+        self.policy_cache = {}
 
     def search(self, initial_state, current_player):
         """シミュレーションを実行し、最適な手を返す"""
@@ -100,59 +112,44 @@ class MCTS:
     def get_policy(self, board, player, legal_moves):
         """NumPyモデルから各手の確率を取得"""
         state = np.array(board) * player
-        # PyTorchの形状 (1, 1, 8, 8) に合わせる
-        state_input = state.reshape(1, 1, 8, 8)
-        
-        # 【修正】torchではなくnumpyモデルのforwardを呼び出す
-        output = self.model.forward(state_input)
-        
+        state_key = (player, state.tobytes())
+        if state_key in self.policy_cache:
+            output = self.policy_cache[state_key]
+        else:
+            state_input = state.reshape(1, 1, 8, 8)
+            output = self.model.forward(state_input)
+            self.policy_cache[state_key] = output
+
         policy = {}
-        scores = []
-        for r, c in legal_moves:
-            idx = r * 8 + c
-            scores.append(output[idx])
-        
+        scores = [output[r * 8 + c] for r, c in legal_moves]
         scores = np.array(scores)
-        scores = np.exp(scores - np.max(scores))
-        probs = scores / np.sum(scores)
-        
+        exp_scores = np.exp(scores - np.max(scores))
+        probs = exp_scores / np.sum(exp_scores)
+
         for i, action in enumerate(legal_moves):
             policy[action] = probs[i]
-            
+
         return policy
 
     def evaluate_board(self, game):
         """
         オセロ特有の盤面評価（角の価値を高く、角の隣を低くする）
         """
-        # 盤面の各マスの価値（重み付け）
-        weight_matrix = np.array([
-            [ 120, -20,  20,   5,   5,  20, -20, 120],
-            [ -20, -40,  -5,  -5,  -5,  -5, -40, -20],
-            [  20,  -5,  15,   3,   3,  15,  -5,  20],
-            [   5,  -5,   3,   3,   3,   3,  -5,   5],
-            [   5,  -5,   3,   3,   3,   3,  -5,   5],
-            [  20,  -5,  15,   3,   3,  15,  -5,  20],
-            [ -20, -40,  -5,  -5,  -5,  -5, -40, -20],
-            [ 120, -20,  20,   5,   5,  20, -20, 120]
-        ])
-
-        # 現在のプレイヤーから見たスコアを計算
-        player_board = (game.board == game.current_player).astype(int)
-        opponent_board = (game.board == -game.current_player).astype(int)
+        player_board = (game.board == game.current_player)
+        opponent_board = (game.board == -game.current_player)
         
-        player_score = np.sum(player_board * weight_matrix)
-        opponent_score = np.sum(opponent_board * weight_matrix)
+        player_score = np.sum(player_board * self.WEIGHT_MATRIX)
+        opponent_score = np.sum(opponent_board * self.WEIGHT_MATRIX)
         
-        # 終局時（石の数で勝敗が決まっている場合）は石の数を最優先
         if game.is_game_over():
             p_stones = np.sum(player_board)
             o_stones = np.sum(opponent_board)
-            if p_stones > o_stones: return 1.0
-            if p_stones < o_stones: return -1.0
+            if p_stones > o_stones:
+                return 1.0
+            if p_stones < o_stones:
+                return -1.0
             return 0.0
 
-        # スコアの差を -1.0 〜 1.0 に正規化（tanh関数を使用）
         return math.tanh((player_score - opponent_score) / 100.0)
 
     def backpropagate(self, node, value, leaf_player):

@@ -29,8 +29,9 @@ def predict_best_move(board_array, current_player):
     if len(legal_moves) == 1: return legal_moves[0][0], legal_moves[0][1]
 
     # MCTSによるシミュレーション
-    # ※Render無料枠のCPUに合わせて、まずは確実に動く「20回」に設定。安定したら増やせます。
-    mcts = MCTS(ai_model, num_simulations=100)
+    # ※応答速度を優先し、検討回数を少なめに設定しています。
+    #    50回が速すぎず強さも安定する目安ですが、必要ならさらに調整可能です。
+    mcts = MCTS(ai_model, num_simulations=25)
     best_move = mcts.search(board_array, current_player)
     
     return best_move[0], best_move[1]

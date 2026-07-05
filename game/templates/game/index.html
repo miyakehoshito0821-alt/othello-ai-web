@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Othello</title>
+    <style>
+        body { font-family: 'Arial', sans-serif; background-color: #f0f2f5; text-align: center; margin: 0; padding: 20px; }
+        h1 { color: #333; }
+        #status { font-size: 1.2rem; margin-bottom: 20px; font-weight: bold; }
+        #board { 
+            display: grid; 
+            grid-template-columns: repeat(8, 60px); 
+            grid-template-rows: repeat(8, 60px); 
+            gap: 2px; 
+            background-color: #333; 
+            width: max-content; 
+            margin: 0 auto; 
+            border: 4px solid #333; 
+            border-radius: 4px;
+        }
+        .cell { background-color: #2e8b57; display: flex; justify-content: center; align-items: center; cursor: pointer; }
+        .cell:hover { background-color: #3cb371; }
+        .stone { width: 50px; height: 50px; border-radius: 50%; box-shadow: 2px 2px 5px rgba(0,0,0,0.3); }
+        .black { background-color: #111; }
+        .white { background-color: #eee; }
+        .loading { color: #e74c3c; animation: blink 1s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+    </style>
+</head>
+<body>
+
+    <h1>AI Othello</h1>
+    <div id="status">手番: あなた (黒)</div>
+    <div id="board"></div>
+
+    <script>
+        const boardElement = document.getElementById('board');
+        const statusElement = document.getElementById('status');
+        
+        // 盤面データ (0:空, 1:黒(あなた), -1:白(AI))
+        let board = Array.from({length: 8}, () => Array(8).fill(0));
+        let currentPlayer = 1; 
+        let isAITurn = false;
+
+        const DIRECTIONS = [
+            [-1,-1], [-1,0], [-1,1], [0,-1], [0,1], [1,-1], [1,0], [1,1]
+        ];
+
+        // 初期配置
+        board[3][3] = -1; board[4][4] = -1;
+        board[3][4] = 1; board[4][3] = 1;
+
+        function drawBoard() {
+            boardElement.innerHTML = '';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.onclick = () => onCellClick(r, c);
+
+                    if (board[r][c] === 1) {
+                        cell.innerHTML = '<div class="stone black"></div>';
+                    } else if (board[r][c] === -1) {
+                        cell.innerHTML = '<div class="stone white"></div>';
+                    }
+                    boardElement.appendChild(cell);
+                }
+            }
+        }
+
+        function getFlippedStones(r, c, player) {
+            if (board[r][c] !== 0) return [];
+            let flipped = [];
+            
+            for (let [dr, dc] of DIRECTIONS) {
+                let nr = r + dr, nc = c + dc;
+                let temp = [];
+                while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && board[nr][nc] === -player) {
+                    temp.push([nr, nc]);
+                    nr += dr; nc += dc;
+                }
+                if (temp.length > 0 && nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && board[nr][nc] === player) {
+                    flipped.push(...temp);
+                }
+            }
+            return flipped;
+        }
+
+        async function onCellClick(r, c) {
+            if (isAITurn) return; // AIの思考中はクリック無効
+
+            const flipped = getFlippedStones(r, c, currentPlayer);
+            if (flipped.length === 0) return; // 合法手でなければ無視
+
+            // あなた(黒)が石を置く
+            applyMove(r, c, flipped, currentPlayer);
+            
+            // AIのターンへ
+            isAITurn = true;
+            currentPlayer = -1;
+            statusElement.innerHTML = '<span class="loading">AIが思考中...</span>';
+            
+            // 少し遅延を入れてAIのAPIを叩く（UX向上のため）
+            setTimeout(fetchAIMove, 500);
+        }
+
+        function applyMove(r, c, flipped, player) {
+            board[r][c] = player;
+            for (let [fr, fc] of flipped) {
+                board[fr][fc] = player;
+            }
+            drawBoard();
+        }
+
+        async function fetchAIMove() {
+            try {
+                const response = await fetch('/api/play/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ board: board, current_player: currentPlayer })
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    const flipped = getFlippedStones(data.row, data.col, currentPlayer);
+                    applyMove(data.row, data.col, flipped, currentPlayer);
+                } else {
+                    alert("AIエラー: " + data.message);
+                }
+            } catch (error) {
+                alert("通信エラーが発生しました。");
+            } finally {
+                // あなた(黒)のターンに戻す
+                currentPlayer = 1;
+                isAITurn = false;
+                statusElement.innerText = '手番: あなた (黒)';
+            }
+        }
+
+        // 初回描画
+        drawBoard();
+    </script>
+</body>
+</html>

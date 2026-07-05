@@ -1,0 +1,13 @@
+# 仮想環境
+venv/
+env/
+
+# Pythonのキャッシュ
+__pycache__/
+*.pyc
+
+# データベース（今回は不要なので除外）
+db.sqlite3
+
+# OSのシステムファイル
+.DS_Store
